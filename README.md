@@ -1,65 +1,109 @@
 # file-renamer
 
-指定したフォルダ内のファイル名を、連番付きの分かりやすい名前に整理するCLIツールです。
+## 概要
 
-例として、PDFファイルを `lecture_01.pdf`, `lecture_02.pdf` のような名前にまとめて変更できます。
+`file-renamer` は、指定したフォルダ内のファイル名を連番付きの分かりやすい名前に整理するCLIツールです。
 
-このREADMEは、実装方針と使い方を整理したものです。
+たとえば、フォルダ内のPDFファイルを `lecture_01.pdf`, `lecture_02.pdf`, `lecture_03.pdf` のような名前にまとめて変更できます。
 
-## 実装方針
+Python 3.10以上を想定しています。本体はPython標準ライブラリのみで動作します。
 
-- Pythonで実装する
-- 標準ライブラリを優先して使う
-- CLI引数の解析には `argparse` を使う
-- ファイルやパスの操作には `pathlib` を使う
-- 対象フォルダ直下のファイルだけを対象にする
-- 対象ファイルはファイル名の昇順で並べる
-- デフォルトは dry-run とし、実際のリネームは行わない
-- `--apply` が指定された場合だけファイル名を変更する
-- リネーム前に変更先の名前が衝突しないか確認する
+## 特徴
+
+- `--input` で対象フォルダを指定できる
+- `--ext` で対象拡張子を指定できる
+- `--prefix` で出力ファイル名の接頭辞を指定できる
+- デフォルトは dry-run で、変更予定だけを表示する
+- `--apply` を付けた場合だけ実際にリネームする
 - 既存ファイルを上書きしない
-- エラー時は初心者にも分かる日本語メッセージを表示する
-- 実装後は `pytest` で動作確認する
+- サブフォルダ内のファイルは対象外にする
+- エラー時は日本語メッセージを表示する
 
-## ファイル構成
+## Quick Start
 
-```text
-file-renamer/
-├── README.md
-├── AGENTS.md
-├── src/
-│   └── rename_files.py
-├── examples/
-│   └── input/
-│       ├── chapter-final.pdf
-│       ├── intro.pdf
-│       ├── memo.txt
-│       └── sample.pdf
-└── tests/
-    └── test_rename_files.py
+まずはサンプルファイルを `/tmp` にコピーして試します。`examples/input/` に直接 `--apply` するとサンプルファイル名が変わるため、コピー先で試すのがおすすめです。
+
+```bash
+cp -R examples/input /tmp/file-renamer-demo
 ```
 
-- `src/rename_files.py`: CLI本体。引数解析、対象ファイル取得、リネーム計画作成、衝突チェック、実行処理を含める
-- `examples/input/`: 動作確認用のサンプルファイルを置く
-- `tests/test_rename_files.py`: dry-run、実リネーム、衝突エラー、対象拡張子の絞り込みなどのテストを書く
+dry-runで変更予定を確認します。
 
-将来的に処理が大きくなった場合は、CLI部分とリネームロジックを別ファイルに分けることも検討します。
+```bash
+python3 src/rename_files.py --input /tmp/file-renamer-demo --ext .pdf --prefix lecture
+```
+
+出力例:
+
+```text
+[dry-run] 以下のようにリネームします:
+chapter-final.pdf -> lecture_01.pdf
+intro.pdf -> lecture_02.pdf
+sample.pdf -> lecture_03.pdf
+
+実際に変更するには --apply を付けて実行してください。
+```
+
+内容を確認して問題なければ、`--apply` を付けて実行します。
+
+```bash
+python3 src/rename_files.py --input /tmp/file-renamer-demo --ext .pdf --prefix lecture --apply
+```
+
+`examples/input/` の `.pdf` ファイルは動作確認用のダミーファイルです。実際のPDF文書ではありません。
 
 ## 使い方
 
-デフォルトでは dry-run として、変更予定だけを表示します。
+基本形:
 
 ```bash
 python3 src/rename_files.py --input 対象フォルダ --ext 対象拡張子 --prefix 接頭辞
 ```
 
-実際にファイル名を変更する場合は、`--apply` を付けます。
+実際にファイル名を変更する場合:
 
 ```bash
 python3 src/rename_files.py --input 対象フォルダ --ext 対象拡張子 --prefix 接頭辞 --apply
 ```
 
-## CLIオプション
+例:
+
+```bash
+python3 src/rename_files.py --input ./docs --ext .pdf --prefix lecture
+```
+
+対象フォルダに以下のファイルがある場合:
+
+```text
+docs/
+├── intro.pdf
+├── chapter-final.pdf
+├── memo.txt
+└── sample.pdf
+```
+
+dry-runでは、次のように変更予定だけを表示します。
+
+```text
+[dry-run] 以下のようにリネームします:
+chapter-final.pdf -> lecture_01.pdf
+intro.pdf -> lecture_02.pdf
+sample.pdf -> lecture_03.pdf
+
+実際に変更するには --apply を付けて実行してください。
+```
+
+`--apply` を付けて実行すると、対象フォルダは次のようになります。
+
+```text
+docs/
+├── lecture_01.pdf
+├── lecture_02.pdf
+├── lecture_03.pdf
+└── memo.txt
+```
+
+## オプション
 
 | オプション | 必須 | 説明 | 例 |
 | --- | --- | --- | --- |
@@ -72,143 +116,75 @@ python3 src/rename_files.py --input 対象フォルダ --ext 対象拡張子 --p
 
 `--ext` には、空文字、空白のみ、`.` だけの値、`/`、`\`、`..` を含む値は使えません。必ず `.pdf` のようにドット付きで指定します。
 
-## 入力例
+## 安全設計
 
-対象フォルダ `docs/` に以下のファイルがあるとします。
-
-```text
-docs/
-├── intro.pdf
-├── chapter-final.pdf
-├── memo.txt
-└── sample.pdf
-```
-
-次のコマンドを実行します。
-
-```bash
-python3 src/rename_files.py --input ./docs --ext .pdf --prefix lecture
-```
-
-## 出力例
-
-デフォルトでは dry-run のため、実際には変更せず、変更予定だけ表示します。
-
-```text
-[dry-run] 以下のようにリネームします:
-chapter-final.pdf -> lecture_01.pdf
-intro.pdf -> lecture_02.pdf
-sample.pdf -> lecture_03.pdf
-
-実際に変更するには --apply を付けて実行してください。
-```
-
-実際に変更する場合:
-
-```bash
-python3 src/rename_files.py --input ./docs --ext .pdf --prefix lecture --apply
-```
-
-出力例:
-
-```text
-リネームを実行しました:
-chapter-final.pdf -> lecture_01.pdf
-intro.pdf -> lecture_02.pdf
-sample.pdf -> lecture_03.pdf
-```
-
-実行後のフォルダ:
-
-```text
-docs/
-├── lecture_01.pdf
-├── lecture_02.pdf
-├── lecture_03.pdf
-└── memo.txt
-```
-
-## ファイル名ルール
-
-- ファイル名は `prefix_01.pdf`, `prefix_02.pdf` のようにする
-- 連番は `01` から始める
-- 桁数は最低2桁にする
-- 対象ファイル数が100件以上ある場合は、必要に応じて桁数を増やす
-  - 例: 100件ある場合は `lecture_001.pdf`, `lecture_002.pdf` のようにする
-- 拡張子は `--ext` で指定したものを使う
-- 対象ファイルの並び順は、元のファイル名の昇順にする
-- 拡張子は大文字小文字を区別する
-  - 例: `--ext .pdf` を指定した場合、`.PDF` のファイルは対象外
-
-## エラー例
+- デフォルトでは dry-run として動作し、実際のリネームは行わない
+- `--apply` が指定された場合だけファイル名を変更する
+- リネーム前に変更先のファイルが既に存在しないか確認する
+- `--apply` 実行直前にも、変更先のファイルが既に存在しないか再確認する
+- 既存ファイルを上書きしない
+- `--prefix` と `--ext` にパス区切りや `..` を含む値を指定できない
+- 対象ファイルは元のファイル名の昇順で処理する
 
 変更先と同じ名前のファイルが既にある場合は、上書きせずエラーにします。
-
-例:
-
-```text
-docs/
-├── intro.pdf
-├── sample.pdf
-└── lecture_01.pdf
-```
-
-この状態で次を実行した場合:
-
-```bash
-python3 src/rename_files.py --input ./docs --ext .pdf --prefix lecture --apply
-```
-
-出力例:
 
 ```text
 エラー: 変更先のファイルが既に存在します: lecture_01.pdf
 既存ファイルを上書きしないため、処理を中止しました。
 ```
 
-dry-runの場合も、衝突が見つかったら同じようにエラーとして表示します。
+## 制限事項
 
-## サンプルで試す
-
-`examples/input/` にサンプルファイルがあります。まずは dry-run で変更予定だけを確認します。
-
-```bash
-python3 src/rename_files.py --input examples/input --ext .pdf --prefix lecture
-```
-
-実際にリネームする場合は `--apply` を付けます。
-
-```bash
-python3 src/rename_files.py --input examples/input --ext .pdf --prefix lecture --apply
-```
-
-`examples/input/` で `--apply` を試すと、サンプルファイル名が実際に変わります。元のサンプルを残したい場合は、必要に応じてコピーしてから試してください。
+- ロールバック機能はありません
+- サブフォルダ内のファイルは対象外です
+- 拡張子は大文字小文字を区別します
+  - 例: `--ext .pdf` を指定した場合、`.PDF` のファイルは対象外です
+- `--apply` の途中でエラーが起きた場合、一部のファイルだけ変更済みになる可能性があります
+- 実行前に dry-run の結果を確認することを推奨します
+- 大事なファイルを扱う場合は、事前にバックアップを取ってください
 
 ## テスト方法
 
-`pytest` が入っている環境では、次のコマンドでテストできます。
+テストには `pytest` を使います。`pytest` は開発・テスト用依存であり、ツール本体の実行には不要です。
+
+プロジェクト内の仮想環境を使う例:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest
+```
+
+すでに `pytest` が入っている環境では、次のコマンドでも実行できます。
 
 ```bash
 python3 -m pytest
 ```
 
-プロジェクト内の仮想環境を使う場合:
+## 開発メモ
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install pytest
-.venv/bin/python -m pytest
+ファイル構成:
+
+```text
+file-renamer/
+├── README.md
+├── AGENTS.md
+├── requirements-dev.txt
+├── src/
+│   └── rename_files.py
+├── examples/
+│   └── input/
+│       ├── chapter-final.pdf
+│       ├── intro.pdf
+│       ├── memo.txt
+│       └── sample.pdf
+└── tests/
+    └── test_rename_files.py
 ```
 
-## 注意点
+- `src/rename_files.py`: CLI本体
+- `tests/test_rename_files.py`: pytestによるテスト
+- `examples/input/`: 動作確認用のダミーファイル
+- `requirements-dev.txt`: 開発・テスト用依存
 
-- デフォルトでは dry-run なので、ファイル名は変更されません
-- 実際に変更するには必ず `--apply` を指定します
-- 既存ファイルは上書きしません
-- 対象になるのは、`--ext` で指定した拡張子のファイルだけです
-- `--ext` は `.pdf` のようにドット付きで指定します
-- `--ext .pdf` は `.PDF` には一致しません
-- `--prefix` と `--ext` には、`/`、`\`、`..` を含められません
-- サブフォルダ内のファイルは対象外にします
-- 実行前に dry-run の結果を確認してください
-- 大事なファイルを扱う場合は、事前にバックアップを取ってください
+実装では、CLI引数の解析に `argparse`、ファイルやパスの操作に `pathlib` を使っています。外部サービスや有料APIは使っていません。
