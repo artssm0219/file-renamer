@@ -18,24 +18,41 @@ class RenamePlan:
 
 
 def normalize_ext(ext: str) -> str:
+    if not ext or not ext.strip():
+        raise RenameFilesError(
+            "エラー: --ext には空でない拡張子を指定してください。"
+        )
     if not ext.startswith(".") or ext == ".":
         raise RenameFilesError(
             "エラー: --ext は .pdf のようにドット付きで指定してください。"
+        )
+    if "/" in ext or "\\" in ext or ".." in ext:
+        raise RenameFilesError(
+            "エラー: --ext に /, \\, .. は使えません。"
         )
     return ext
 
 
 def validate_prefix(prefix: str) -> str:
-    if not prefix:
+    if not prefix or not prefix.strip():
         raise RenameFilesError("エラー: --prefix には空でない文字列を指定してください。")
+    if "/" in prefix or "\\" in prefix or ".." in prefix:
+        raise RenameFilesError(
+            "エラー: --prefix に /, \\, .. は使えません。"
+        )
     return prefix
 
 
-def collect_target_files(input_dir: Path, ext: str) -> list[Path]:
+def validate_input_dir(input_dir: Path) -> Path:
     if not input_dir.exists():
         raise RenameFilesError(f"エラー: 対象フォルダが存在しません: {input_dir}")
     if not input_dir.is_dir():
         raise RenameFilesError(f"エラー: --input にはフォルダを指定してください: {input_dir}")
+    return input_dir
+
+
+def collect_target_files(input_dir: Path, ext: str) -> list[Path]:
+    input_dir = validate_input_dir(input_dir)
 
     files = sorted(
         (
@@ -72,18 +89,31 @@ def create_rename_plan(input_dir: Path, ext: str, prefix: str) -> list[RenamePla
 
 def validate_no_collisions(plan: Sequence[RenamePlan]) -> None:
     for item in plan:
-        if item.target.exists() and item.target != item.source:
-            raise RenameFilesError(
-                f"エラー: 変更先のファイルが既に存在します: {item.target.name}\n"
-                "既存ファイルを上書きしないため、処理を中止しました。"
-            )
+        ensure_target_does_not_exist(item)
+
+
+def ensure_target_does_not_exist(item: RenamePlan) -> None:
+    if item.target.exists() and item.target != item.source:
+        raise RenameFilesError(
+            f"エラー: 変更先のファイルが既に存在します: {item.target.name}\n"
+            "既存ファイルを上書きしないため、処理を中止しました。"
+        )
 
 
 def apply_rename_plan(plan: Sequence[RenamePlan]) -> None:
+    validate_no_collisions(plan)
     for item in plan:
         if item.source == item.target:
             continue
-        item.source.rename(item.target)
+        ensure_target_does_not_exist(item)
+        try:
+            item.source.rename(item.target)
+        except OSError as error:
+            raise RenameFilesError(
+                f"エラー: ファイル名の変更に失敗しました: "
+                f"{item.source.name} -> {item.target.name}\n"
+                f"原因: {error}"
+            ) from error
 
 
 def print_plan(plan: Sequence[RenamePlan], should_apply: bool) -> None:

@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from src.rename_files import create_rename_plan, main
+import pytest
+
+from src.rename_files import (
+    RenameFilesError,
+    RenamePlan,
+    apply_rename_plan,
+    create_rename_plan,
+    main,
+)
 
 
 def write_sample(path: Path) -> None:
@@ -111,6 +119,157 @@ def test_no_target_files_is_error(tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "エラー: 対象ファイルが見つかりません。" in captured.err
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["", "   ", "bad/name", "bad\\name", "..", "../bad", "bad..name"],
+)
+def test_invalid_prefix_is_error(tmp_path, capsys, prefix):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    write_sample(input_dir / "a.pdf")
+
+    exit_code = main(
+        [
+            "--input",
+            str(input_dir),
+            "--ext",
+            ".pdf",
+            "--prefix",
+            prefix,
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "エラー: --prefix" in captured.err
+    assert (input_dir / "a.pdf").exists()
+
+
+@pytest.mark.parametrize(
+    "ext",
+    ["", "   ", "pdf", ".", ".pdf/evil", ".pdf\\evil", ".pdf..bak"],
+)
+def test_invalid_ext_is_error(tmp_path, capsys, ext):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    write_sample(input_dir / "a.pdf")
+
+    exit_code = main(
+        [
+            "--input",
+            str(input_dir),
+            "--ext",
+            ext,
+            "--prefix",
+            "lecture",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "エラー: --ext" in captured.err
+    assert (input_dir / "a.pdf").exists()
+
+
+def test_missing_input_directory_is_error(tmp_path, capsys):
+    input_dir = tmp_path / "missing"
+
+    exit_code = main(
+        [
+            "--input",
+            str(input_dir),
+            "--ext",
+            ".pdf",
+            "--prefix",
+            "lecture",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "エラー: 対象フォルダが存在しません:" in captured.err
+
+
+def test_input_file_is_error(tmp_path, capsys):
+    input_file = tmp_path / "input.pdf"
+    write_sample(input_file)
+
+    exit_code = main(
+        [
+            "--input",
+            str(input_file),
+            "--ext",
+            ".pdf",
+            "--prefix",
+            "lecture",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "エラー: --input にはフォルダを指定してください:" in captured.err
+
+
+def test_uppercase_extension_is_not_matched_by_lowercase_ext(tmp_path, capsys):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    write_sample(input_dir / "report.PDF")
+
+    exit_code = main(
+        [
+            "--input",
+            str(input_dir),
+            "--ext",
+            ".pdf",
+            "--prefix",
+            "lecture",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "エラー: 対象ファイルが見つかりません。" in captured.err
+    assert (input_dir / "report.PDF").exists()
+
+
+def test_apply_rechecks_existing_target_before_renaming(tmp_path):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    write_sample(input_dir / "a.pdf")
+    plan = create_rename_plan(input_dir, ".pdf", "lecture")
+    write_sample(input_dir / "lecture_01.pdf")
+
+    with pytest.raises(RenameFilesError) as error:
+        apply_rename_plan(plan)
+
+    assert "エラー: 変更先のファイルが既に存在します: lecture_01.pdf" in str(
+        error.value
+    )
+    assert (input_dir / "a.pdf").exists()
+    assert (input_dir / "lecture_01.pdf").exists()
+
+
+def test_apply_reports_rename_oserror(tmp_path, monkeypatch):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    source = input_dir / "a.pdf"
+    target = input_dir / "lecture_01.pdf"
+    write_sample(source)
+    plan = [RenamePlan(source=source, target=target)]
+
+    def fail_rename(self, target_path):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(type(source), "rename", fail_rename)
+
+    with pytest.raises(RenameFilesError) as error:
+        apply_rename_plan(plan)
+
+    message = str(error.value)
+    assert "エラー: ファイル名の変更に失敗しました: a.pdf -> lecture_01.pdf" in message
+    assert "原因: permission denied" in message
 
 
 def test_number_width_expands_for_100_or_more_files(tmp_path):
